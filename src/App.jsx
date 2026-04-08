@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { analyzeText, generateSummary, getRelativeTime } from './nlpService';
+import { analyzeText, generateSummary, getRelativeTime, tokenizeText } from './nlpService';
 import { loadMemories, saveMemories, clearAllMemories } from './memoryStore';
 import { searchMemories } from './searchService';
 
@@ -1130,6 +1130,86 @@ const InsightsPanel = ({ memories }) => {
               </div>
             </motion.div>
           )}
+
+          {/* Under the Hood — NLP Pipeline Preview */}
+          {memories.length > 0 && (() => {
+            const latest = memories[0];
+            const tokens = tokenizeText(latest.text);
+            if (tokens.length === 0) return null;
+
+            const posColors = {
+              noun: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-400' },
+              verb: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
+              person: { bg: 'bg-pink-100', text: 'text-pink-700', border: 'border-pink-200', dot: 'bg-pink-400' },
+              place: { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-400' },
+              adj: { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-200', dot: 'bg-violet-400' },
+              adv: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
+              det: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200', dot: 'bg-gray-300' },
+              pron: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200', dot: 'bg-gray-300' },
+              prep: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200', dot: 'bg-gray-300' },
+              conj: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200', dot: 'bg-gray-300' },
+              word: { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200', dot: 'bg-gray-300' },
+            };
+
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                className="bg-white/60 backdrop-blur-xl rounded-3xl p-8 shadow-lg border border-white/50"
+              >
+                <h3 className="text-lg font-bold text-gray-700 mb-2 flex items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                  🧪 Under the Hood
+                </h3>
+                <p className="text-xs text-gray-400 mb-4">How our NLP engine tokenizes your latest memory</p>
+
+                <div className="flex flex-wrap gap-2 mb-5">
+                  {tokens.map((token, i) => {
+                    const colors = posColors[token.pos] || posColors.word;
+                    const changed = token.text.toLowerCase() !== token.root;
+                    return (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        whileInView={{ opacity: 1, scale: 1 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: i * 0.04 }}
+                        whileHover={{ scale: 1.1, y: -2 }}
+                        className={`relative flex flex-col items-center px-3 py-1.5 rounded-xl border ${colors.bg} ${colors.border} cursor-default`}
+                      >
+                        <span className={`text-sm font-semibold ${colors.text}`}>
+                          {token.text}
+                        </span>
+                        {changed && (
+                          <span className="text-[10px] text-gray-400 -mt-0.5">→ {token.root}</span>
+                        )}
+                        <span className={`absolute -top-1.5 -right-1.5 text-[8px] px-1.5 py-0.5 rounded-full ${colors.dot} text-white font-bold uppercase leading-none`}>
+                          {token.tag}
+                        </span>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                {/* Legend */}
+                <div className="flex flex-wrap gap-3 mt-2 pt-3 border-t border-gray-100">
+                  {[
+                    { label: 'Noun', color: 'bg-blue-400' },
+                    { label: 'Verb', color: 'bg-emerald-400' },
+                    { label: 'Person', color: 'bg-pink-400' },
+                    { label: 'Place', color: 'bg-orange-400' },
+                    { label: 'Adj', color: 'bg-violet-400' },
+                    { label: 'Other', color: 'bg-gray-300' },
+                  ].map(item => (
+                    <span key={item.label} className="flex items-center gap-1 text-[10px] text-gray-500">
+                      <span className={`w-2 h-2 rounded-full ${item.color}`} />
+                      {item.label}
+                    </span>
+                  ))}
+                </div>
+              </motion.div>
+            );
+          })()}
         </div>
       )}
     </div>

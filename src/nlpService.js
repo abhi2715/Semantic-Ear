@@ -242,3 +242,64 @@ export function generateSummary(text, category, entities) {
 
   return parts.join(' ');
 }
+
+/**
+ * Tokenize text into individual words with POS tags and root/base forms.
+ * Gives a "behind the scenes" peek at how the NLP engine processes text.
+ * @param {string} text
+ * @returns {Array<{text: string, root: string, pos: string, tag: string}>}
+ */
+export function tokenizeText(text) {
+  if (!text || text.trim().length === 0) return [];
+
+  try {
+    const doc = nlp(text);
+    const tokens = [];
+
+    doc.terms().forEach((term) => {
+      const word = term.text('text');
+      const root = term.text('root') || word;
+      // Get the most descriptive tag
+      const tagList = term.json()?.[0]?.terms?.[0]?.tags || [];
+      const tagArr = Array.isArray(tagList) ? tagList : Object.keys(tagList || {});
+
+      // Pick the most meaningful POS tag
+      let pos = 'word';
+      let tag = 'Word';
+      const tagSet = new Set(tagArr.map(t => t.toLowerCase()));
+
+      if (tagSet.has('person') || tagSet.has('firstname') || tagSet.has('lastname')) {
+        pos = 'person'; tag = 'Person';
+      } else if (tagSet.has('place') || tagSet.has('city') || tagSet.has('country') || tagSet.has('region')) {
+        pos = 'place'; tag = 'Place';
+      } else if (tagSet.has('verb') || tagSet.has('infinitive') || tagSet.has('pastverb') || tagSet.has('presenttense')) {
+        pos = 'verb'; tag = 'Verb';
+      } else if (tagSet.has('noun') || tagSet.has('singular') || tagSet.has('plural')) {
+        pos = 'noun'; tag = 'Noun';
+      } else if (tagSet.has('adjective') || tagSet.has('comparable')) {
+        pos = 'adj'; tag = 'Adj';
+      } else if (tagSet.has('adverb')) {
+        pos = 'adv'; tag = 'Adv';
+      } else if (tagSet.has('preposition')) {
+        pos = 'prep'; tag = 'Prep';
+      } else if (tagSet.has('conjunction')) {
+        pos = 'conj'; tag = 'Conj';
+      } else if (tagSet.has('determiner') || tagSet.has('article')) {
+        pos = 'det'; tag = 'Det';
+      } else if (tagSet.has('pronoun')) {
+        pos = 'pron'; tag = 'Pron';
+      }
+
+      if (word.trim()) {
+        tokens.push({ text: word, root: root.toLowerCase(), pos, tag });
+      }
+    });
+
+    return tokens;
+  } catch (e) {
+    console.warn('[NLP] tokenizeText failed:', e);
+    return text.split(/\s+/).filter(Boolean).map(w => ({
+      text: w, root: w.toLowerCase(), pos: 'word', tag: 'Word'
+    }));
+  }
+}
