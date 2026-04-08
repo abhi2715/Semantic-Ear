@@ -15,12 +15,17 @@ function useSpeechRecognition() {
   const [isSupported, setIsSupported] = useState(true);
   const recognitionRef = useRef(null);
   const shouldRestartRef = useRef(false);
-  // Ref mirrors transcript state synchronously — avoids stale closure in handleStop
-  const transcriptRef = useRef('');
+
+  // accumulatedTextRef: persists finalized text ACROSS recognition restarts.
+  // When the browser auto-stops and restarts recognition (continuous mode),
+  // event.results resets. This ref keeps all previously finalized text.
+  const accumulatedTextRef = useRef('');
+
+  // sessionFinalsRef: finalized text from the CURRENT recognition session only.
+  const sessionFinalsRef = useRef('');
+
+  // interimRef: current interim (in-progress) text
   const interimRef = useRef('');
-  // Callback-based stop: fires after recognition fully ends with final transcript
-  const onStopCallbackRef = useRef(null);
-  const stopTimeoutRef = useRef(null);
 
   useEffect(() => {
     if (!SpeechRecognition) {
@@ -35,34 +40,37 @@ function useSpeechRecognition() {
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
-      let finalText = '';
-      let interimText = '';
+      let sessionFinals = '';
+      let currentInterim = '';
 
+      // Process ALL results in the current session
       for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          finalText += result[0].transcript + ' ';
+          sessionFinals += result[0].transcript + ' ';
         } else {
-          interimText += result[0].transcript;
+          currentInterim += result[0].transcript;
         }
       }
 
-      // REPLACE entire transcript with all finals (not append) — event.results
-      // is cumulative, so iterating from 0 re-collects all final results.
-      const trimmedFinal = finalText.trim();
-      transcriptRef.current = trimmedFinal;
-      setTranscript(trimmedFinal);
+      sessionFinalsRef.current = sessionFinals.trim();
+      interimRef.current = currentInterim;
 
-      interimRef.current = interimText;
-      setInterimTranscript(interimText);
+      // Full transcript = accumulated from previous sessions + current session finals
+      const fullFinal = (accumulatedTextRef.current + ' ' + sessionFinalsRef.current).trim();
+      setTranscript(fullFinal);
+      setInterimTranscript(currentInterim);
+
+      console.log('[SemanticEar] onresult — accumulated:', accumulatedTextRef.current,
+        '| session finals:', sessionFinalsRef.current,
+        '| interim:', currentInterim);
     };
 
     recognition.onerror = (event) => {
-      console.warn('Speech recognition error:', event.error);
+      console.warn('[SemanticEar] error:', event.error);
       if (event.error === 'not-allowed') {
         setIsSupported(false);
       }
-      // Don't auto-restart on errors like 'aborted'
       if (event.error !== 'aborted' && event.error !== 'no-speech') {
         setIsListening(false);
         shouldRestartRef.current = false;
@@ -70,30 +78,22 @@ function useSpeechRecognition() {
     };
 
     recognition.onend = () => {
+      console.log('[SemanticEar] onend — shouldRestart:', shouldRestartRef.current);
       if (shouldRestartRef.current) {
-        // Restart if we're still supposed to be listening (browser auto-stops sometimes)
+        // Browser auto-stopped. Accumulate finalized text from this session
+        // before restarting so it's not lost when event.results resets.
+        if (sessionFinalsRef.current) {
+          accumulatedTextRef.current = (accumulatedTextRef.current + ' ' + sessionFinalsRef.current).trim();
+          sessionFinalsRef.current = '';
+          console.log('[SemanticEar] Accumulated before restart:', accumulatedTextRef.current);
+        }
         try {
           recognition.start();
         } catch (e) {
-          // Already started
+          console.warn('[SemanticEar] Failed to restart:', e);
         }
       } else {
         setIsListening(false);
-        // Fire the pending save callback with the latest transcript
-        if (onStopCallbackRef.current) {
-          if (stopTimeoutRef.current) {
-            clearTimeout(stopTimeoutRef.current);
-            stopTimeoutRef.current = null;
-          }
-          const cb = onStopCallbackRef.current;
-          onStopCallbackRef.current = null;
-          // Include BOTH final AND interim results — interim may contain
-          // speech that was still being recognized when stop was clicked
-          const finalTranscript = ((transcriptRef.current || '') + ' ' + (interimRef.current || '')).trim();
-          console.log('[SemanticEar] onend fired. Final ref:', transcriptRef.current, '| Interim ref:', interimRef.current, '| Combined:', finalTranscript);
-          setInterimTranscript('');
-          cb(finalTranscript);
-        }
       }
     };
 
@@ -101,76 +101,48 @@ function useSpeechRecognition() {
 
     return () => {
       shouldRestartRef.current = false;
-      if (stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
-      try {
-        recognition.stop();
-      } catch (e) { /* already stopped */ }
+      try { recognition.stop(); } catch (e) { /* ok */ }
     };
   }, []);
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current || !isSupported) return;
 
+    // Reset everything for a fresh recording session
+    accumulatedTextRef.current = '';
+    sessionFinalsRef.current = '';
+    interimRef.current = '';
     setTranscript('');
     setInterimTranscript('');
-    transcriptRef.current = '';
-    interimRef.current = '';
     shouldRestartRef.current = true;
-    onStopCallbackRef.current = null;
 
     try {
       recognitionRef.current.start();
       setIsListening(true);
+      console.log('[SemanticEar] Started listening');
     } catch (e) {
-      // Already started, just set state
       setIsListening(true);
     }
   }, [isSupported]);
 
-  /**
-   * Stop listening and invoke `onComplete(transcript)` once the recognition
-   * engine has fully stopped and delivered all final results.
-   */
-  const stopListening = useCallback((onComplete) => {
+  const stopListening = useCallback(() => {
+    console.log('[SemanticEar] stopListening called');
     shouldRestartRef.current = false;
-
-    if (onComplete) {
-      onStopCallbackRef.current = onComplete;
-    }
-
     if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) { /* already stopped */ }
+      try { recognitionRef.current.stop(); } catch (e) { /* ok */ }
     }
-
-    // Safety timeout: if onend doesn't fire within 800ms, invoke the callback
-    // with whatever transcript we have (covers edge cases like recognition
-    // not being active)
-    if (onComplete) {
-      stopTimeoutRef.current = setTimeout(() => {
-        if (onStopCallbackRef.current) {
-          const cb = onStopCallbackRef.current;
-          onStopCallbackRef.current = null;
-          // Include both final and interim results
-          const finalTranscript = ((transcriptRef.current || '') + ' ' + (interimRef.current || '')).trim();
-          console.log('[SemanticEar] Safety timeout fired. Transcript:', finalTranscript);
-          setIsListening(false);
-          setInterimTranscript('');
-          cb(finalTranscript);
-        }
-      }, 800);
-    } else {
-      setIsListening(false);
-      setInterimTranscript('');
-    }
+    setIsListening(false);
+    setInterimTranscript('');
   }, []);
 
-  // Returns the latest transcript synchronously (not subject to React batching)
-  const getLatestTranscript = useCallback(() => {
-    const final = transcriptRef.current || '';
+  // Returns the FULL transcript: accumulated + current session finals + interim
+  const getFullTranscript = useCallback(() => {
+    const accumulated = accumulatedTextRef.current || '';
+    const sessionFinals = sessionFinalsRef.current || '';
     const interim = interimRef.current || '';
-    return (final + ' ' + interim).trim();
+    const full = (accumulated + ' ' + sessionFinals + ' ' + interim).trim();
+    console.log('[SemanticEar] getFullTranscript:', { accumulated, sessionFinals, interim, full });
+    return full;
   }, []);
 
   return {
@@ -181,7 +153,7 @@ function useSpeechRecognition() {
     startListening,
     stopListening,
     setTranscript,
-    getLatestTranscript
+    getFullTranscript
   };
 }
 
@@ -1181,7 +1153,7 @@ export default function App() {
     startListening,
     stopListening,
     setTranscript,
-    getLatestTranscript
+    getFullTranscript
   } = useSpeechRecognition();
 
   const { waveformData, isVoiceActive } = useAudioAnalyser(isListening);
@@ -1221,44 +1193,48 @@ export default function App() {
   };
 
   const handleStopListening = () => {
-    // Use the callback-based stop: the callback fires AFTER recognition
-    // has fully ended and delivered all final results.
-    stopListening((finalText) => {
-      if (finalText && finalText.length > 0) {
-        // Run NLP analysis on the spoken text
-        const { tags, category, entities } = analyzeText(finalText);
-        const summary = generateSummary(finalText, category, entities);
+    // Read the full transcript BEFORE stopping (refs are synchronous)
+    const finalText = getFullTranscript();
+    console.log('[SemanticEar] handleStopListening — finalText:', finalText);
 
-        const newMemory = {
-          id: Date.now(),
-          text: finalText,
-          summary,
-          tags,
-          category,
-          entities,
-          timestamp: Date.now()
-        };
+    // Stop recognition
+    stopListening();
 
-        setMemories(prev => [newMemory, ...prev]);
-        showToast(`✨ Memory saved — "${category}" with ${tags.length} tags`);
-      } else {
-        showToast('No speech detected. Try again!', 'warning');
-      }
+    if (finalText && finalText.length > 0) {
+      // Run NLP analysis on the spoken text
+      const { tags, category, entities } = analyzeText(finalText);
+      const summary = generateSummary(finalText, category, entities);
 
-      setTranscript('');
+      const newMemory = {
+        id: Date.now(),
+        text: finalText,
+        summary,
+        tags,
+        category,
+        entities,
+        timestamp: Date.now()
+      };
 
-      if (!showContent) {
-        setShowContent(true);
-      }
+      console.log('[SemanticEar] Saving memory:', newMemory);
+      setMemories(prev => [newMemory, ...prev]);
+      showToast(`✨ Memory saved — "${category}" with ${tags.length} tags`);
+    } else {
+      showToast('No speech detected. Try again!', 'warning');
+    }
 
-      // Switch to recent tab so user sees the new memory
-      setActiveTab('recent');
+    setTranscript('');
 
-      setTimeout(() => {
-        const element = document.getElementById('content-section');
-        if (element) element.scrollIntoView({ behavior: 'smooth' });
-      }, 300);
-    });
+    if (!showContent) {
+      setShowContent(true);
+    }
+
+    // Switch to recent tab so user sees the new memory
+    setActiveTab('recent');
+
+    setTimeout(() => {
+      const element = document.getElementById('content-section');
+      if (element) element.scrollIntoView({ behavior: 'smooth' });
+    }, 300);
   };
 
   const handleDeleteMemory = (id) => {
