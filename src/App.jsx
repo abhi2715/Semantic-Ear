@@ -1201,23 +1201,39 @@ export default function App() {
     stopListening();
 
     if (finalText && finalText.length > 0) {
-      // Run NLP analysis on the spoken text
-      const { tags, category, entities } = analyzeText(finalText);
-      const summary = generateSummary(finalText, category, entities);
+      try {
+        // Run NLP analysis on the spoken text
+        const { tags, category, entities } = analyzeText(finalText);
+        const summary = generateSummary(finalText, category, entities);
 
-      const newMemory = {
-        id: Date.now(),
-        text: finalText,
-        summary,
-        tags,
-        category,
-        entities,
-        timestamp: Date.now()
-      };
+        const newMemory = {
+          id: Date.now(),
+          text: finalText,
+          summary,
+          tags,
+          category,
+          entities,
+          timestamp: Date.now()
+        };
 
-      console.log('[SemanticEar] Saving memory:', newMemory);
-      setMemories(prev => [newMemory, ...prev]);
-      showToast(`✨ Memory saved — "${category}" with ${tags.length} tags`);
+        console.log('[SemanticEar] Saving memory:', newMemory);
+        setMemories(prev => [newMemory, ...prev]);
+        showToast(`✨ Memory saved — "${category}" with ${tags.length} tags`);
+      } catch (err) {
+        console.error('[SemanticEar] NLP error, saving raw memory:', err);
+        // Fallback: save memory even if NLP fails
+        const newMemory = {
+          id: Date.now(),
+          text: finalText,
+          summary: '💭 ' + finalText.slice(0, 60) + (finalText.length > 60 ? '...' : ''),
+          tags: ['unprocessed'],
+          category: 'general',
+          entities: {},
+          timestamp: Date.now()
+        };
+        setMemories(prev => [newMemory, ...prev]);
+        showToast('✨ Memory saved (raw)');
+      }
     } else {
       showToast('No speech detected. Try again!', 'warning');
     }

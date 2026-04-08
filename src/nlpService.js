@@ -60,67 +60,77 @@ export function analyzeText(text) {
     topics: []
   };
 
+  // --- Extract entities with safety wrappers (compromise API can vary by version) ---
+
   // Extract people names
-  const people = doc.people().out('array');
-  people.forEach(person => {
-    const cleaned = person.trim();
-    if (cleaned.length > 1) {
-      entities.people.push(cleaned);
-      tags.add(cleaned.toLowerCase());
-      tags.add('person');
-    }
-  });
+  try {
+    const people = doc.people().out('array');
+    people.forEach(person => {
+      const cleaned = person.trim();
+      if (cleaned.length > 1) {
+        entities.people.push(cleaned);
+        tags.add(cleaned.toLowerCase());
+        tags.add('person');
+      }
+    });
+  } catch (e) { console.warn('[NLP] people extraction failed:', e); }
 
   // Extract places
-  const places = doc.places().out('array');
-  places.forEach(place => {
-    const cleaned = place.trim();
-    if (cleaned.length > 1) {
-      entities.places.push(cleaned);
-      tags.add(cleaned.toLowerCase());
-      tags.add('place');
-    }
-  });
+  try {
+    const places = doc.places().out('array');
+    places.forEach(place => {
+      const cleaned = place.trim();
+      if (cleaned.length > 1) {
+        entities.places.push(cleaned);
+        tags.add(cleaned.toLowerCase());
+        tags.add('place');
+      }
+    });
+  } catch (e) { console.warn('[NLP] places extraction failed:', e); }
 
-  // Extract dates/times
-  const dates = doc.dates().out('array');
-  dates.forEach(date => {
-    entities.dates.push(date.trim());
-    tags.add('time');
-  });
+  // Extract dates/times (compromise v14 uses .match() instead of .dates())
+  try {
+    const dates = doc.match('#Date+').out('array');
+    dates.forEach(date => {
+      entities.dates.push(date.trim());
+      tags.add('time');
+    });
+  } catch (e) { console.warn('[NLP] dates extraction failed:', e); }
 
   // Extract important nouns (topics)
-  const nouns = doc.nouns().out('array');
-  nouns.forEach(noun => {
-    const cleaned = noun.trim().toLowerCase();
-    // Filter out very common/short words
-    if (cleaned.length > 2 && !['the', 'this', 'that', 'there', 'here', 'also'].includes(cleaned)) {
-      entities.nouns.push(cleaned);
-      // Add the first 5 meaningful nouns as topic tags
-      if (entities.topics.length < 5) {
-        entities.topics.push(cleaned);
-        tags.add(cleaned);
+  try {
+    const nouns = doc.nouns().out('array');
+    nouns.forEach(noun => {
+      const cleaned = noun.trim().toLowerCase();
+      if (cleaned.length > 2 && !['the', 'this', 'that', 'there', 'here', 'also'].includes(cleaned)) {
+        entities.nouns.push(cleaned);
+        if (entities.topics.length < 5) {
+          entities.topics.push(cleaned);
+          tags.add(cleaned);
+        }
       }
-    }
-  });
+    });
+  } catch (e) { console.warn('[NLP] nouns extraction failed:', e); }
 
   // Extract key verbs for activity detection
-  const verbs = doc.verbs().out('array');
-  verbs.forEach(verb => {
-    const cleaned = verb.trim().toLowerCase();
-    if (cleaned.length > 2 && !['is', 'was', 'are', 'were', 'has', 'have', 'had', 'been',
-      'being', 'will', 'would', 'could', 'should', 'can', 'may', 'might', 'shall',
-      'does', 'did', 'got', 'get'].includes(cleaned)) {
-      entities.verbs.push(cleaned);
-    }
-  });
+  try {
+    const verbs = doc.verbs().out('array');
+    verbs.forEach(verb => {
+      const cleaned = verb.trim().toLowerCase();
+      if (cleaned.length > 2 && !['is', 'was', 'are', 'were', 'has', 'have', 'had', 'been',
+        'being', 'will', 'would', 'could', 'should', 'can', 'may', 'might', 'shall',
+        'does', 'did', 'got', 'get'].includes(cleaned)) {
+        entities.verbs.push(cleaned);
+      }
+    });
+  } catch (e) { console.warn('[NLP] verbs extraction failed:', e); }
 
   // Determine category
   const category = detectCategory(text, entities);
   tags.add(category);
 
   return {
-    tags: Array.from(tags).slice(0, 8), // Cap at 8 tags
+    tags: Array.from(tags).slice(0, 8),
     category,
     entities
   };
