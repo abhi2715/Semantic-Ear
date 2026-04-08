@@ -93,7 +93,7 @@ export default function AuthScreen({ onAuthSuccess }) {
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
                                     className="w-full bg-white/70 rounded-2xl px-5 py-3.5 text-gray-700 placeholder-gray-400 border border-gray-200/50 focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent transition-all"
-                                    placeholder="John Doe"
+                                    placeholder="Name"
                                 />
                             </motion.div>
                         )}
