@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeText, generateSummary, getRelativeTime, tokenizeText } from './nlpService';
 import { loadMemories, saveMemories, clearAllMemories } from './memoryStore';
 import { searchMemories } from './searchService';
+import { generateChatResponse } from './chatService';
 
 // ─── Speech Recognition Hook ────────────────────────────────────────────────
 
@@ -1215,6 +1216,218 @@ const InsightsPanel = ({ memories }) => {
     </div>
   );
 };
+// ─── Chat Panel ─────────────────────────────────────────────────────────────
+
+const ChatPanel = ({ memories }) => {
+  const [messages, setMessages] = useState([
+    {
+      id: 1,
+      role: 'bot',
+      text: "Hey! 👋 I'm your memory assistant. Ask me anything about your memories — like \"What did I eat recently?\" or \"Summarize my week\".",
+      relatedMemories: []
+    }
+  ]);
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isTyping]);
+
+  const handleSend = () => {
+    const text = input.trim();
+    if (!text) return;
+
+    const userMsg = { id: Date.now(), role: 'user', text, relatedMemories: [] };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setIsTyping(true);
+
+    // Simulate a small delay for natural feel
+    setTimeout(() => {
+      const response = generateChatResponse(text, memories);
+      const botMsg = {
+        id: Date.now() + 1,
+        role: 'bot',
+        text: response.text,
+        relatedMemories: response.relatedMemories || []
+      };
+      setMessages(prev => [...prev, botMsg]);
+      setIsTyping(false);
+    }, 400 + Math.random() * 600);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  // Simple markdown-like rendering for bold text and code
+  const renderText = (text) => {
+    const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\n)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i} className="font-bold">{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith('`') && part.endsWith('`')) {
+        return <code key={i} className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
+      }
+      if (part === '\n') return <br key={i} />;
+      return <span key={i}>{part}</span>;
+    });
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 mb-20">
+      <motion.h2
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="text-5xl font-bold mb-8 text-center bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400"
+        style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+      >
+        Ask Your Memories
+      </motion.h2>
+
+      {/* Chat Container */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white/60 backdrop-blur-xl rounded-3xl shadow-lg border border-white/50 flex flex-col"
+        style={{ height: '500px' }}
+      >
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {messages.map((msg) => (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div className={`max-w-[80%] ${msg.role === 'user'
+                  ? 'bg-gradient-to-r from-pink-400 to-purple-400 text-white rounded-2xl rounded-br-md'
+                  : 'bg-white/80 text-gray-700 rounded-2xl rounded-bl-md border border-gray-100'
+                } px-5 py-3 shadow-sm`}>
+                {msg.role === 'bot' && (
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className="text-xs">🤖</span>
+                    <span className="text-[10px] font-semibold text-purple-400 uppercase tracking-wider">Memory Bot</span>
+                  </div>
+                )}
+                <div className={`text-sm leading-relaxed ${msg.role === 'user' ? 'text-white' : 'text-gray-700'}`}
+                  style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                  {renderText(msg.text)}
+                </div>
+
+                {/* Related memories preview */}
+                {msg.relatedMemories && msg.relatedMemories.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100/50 space-y-2">
+                    {msg.relatedMemories.slice(0, 2).map((m) => (
+                      <div key={m.id} className="bg-purple-50/80 rounded-xl px-3 py-2 text-xs text-gray-600">
+                        <div className="font-medium text-purple-600 mb-0.5">{m.summary || m.category}</div>
+                        <div className="truncate opacity-70">{m.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ))}
+
+          {/* Typing indicator */}
+          {isTyping && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex justify-start"
+            >
+              <div className="bg-white/80 rounded-2xl rounded-bl-md px-5 py-3 border border-gray-100 shadow-sm">
+                <div className="flex gap-1.5 items-center">
+                  <motion.span
+                    animate={{ opacity: [0.3, 1, 0.3] }}
+                    transition={{ duration: 1, repeat: Infinity, delay: 0 }}
+                    className="w-2 h-2 bg-purple-400 rounded-full"
+                  />
+                  <motion.span
+                    animate={{ opacity: [0.3, 1, 0.3] }}
+                    transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
+                    className="w-2 h-2 bg-purple-400 rounded-full"
+                  />
+                  <motion.span
+                    animate={{ opacity: [0.3, 1, 0.3] }}
+                    transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
+                    className="w-2 h-2 bg-purple-400 rounded-full"
+                  />
+                </div>
+              </div>
+            </motion.div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input */}
+        <div className="p-4 border-t border-white/30">
+          <div className="flex gap-3 items-center">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder='Try "What did I eat?" or "Summarize my memories"'
+              className="flex-1 bg-white/70 rounded-2xl px-5 py-3 text-sm text-gray-700 placeholder-gray-400 border border-gray-200/50 focus:outline-none focus:ring-2 focus:ring-purple-300 focus:border-transparent transition-all cursor-text"
+              style={{ fontFamily: "'DM Sans', sans-serif" }}
+            />
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleSend}
+              disabled={!input.trim() || isTyping}
+              className="bg-gradient-to-r from-pink-400 to-purple-400 text-white p-3 rounded-2xl shadow-lg disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+            >
+              <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </motion.button>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Suggested questions */}
+      <div className="flex flex-wrap gap-2 mt-4 justify-center">
+        {[
+          'Summarize my memories',
+          'What did I eat?',
+          'How many memories do I have?',
+          'What categories do I have?'
+        ].map(q => (
+          <motion.button
+            key={q}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              setInput(q);
+              inputRef.current?.focus();
+            }}
+            className="text-xs px-4 py-2 bg-white/60 backdrop-blur rounded-full text-purple-600 border border-purple-200/50 hover:bg-purple-50 transition-colors cursor-pointer"
+            style={{ fontFamily: "'DM Sans', sans-serif" }}
+          >
+            {q}
+          </motion.button>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 // ─── Main App ────────────────────────────────────────────────────────────────
 
@@ -1372,6 +1585,7 @@ export default function App() {
 
   const tabs = [
     { id: 'recent', label: 'Recent Memories', icon: '🧠' },
+    { id: 'chat', label: 'Ask Memory', icon: '💬' },
     { id: 'insights', label: 'Smart Insights', icon: '⚡' },
     { id: 'timeline', label: 'Memory Timeline', icon: '📅' }
   ];
@@ -1523,6 +1737,18 @@ export default function App() {
                     transition={{ duration: 0.3 }}
                   >
                     <InsightsPanel memories={memories} />
+                  </motion.div>
+                )}
+
+                {activeTab === 'chat' && (
+                  <motion.div
+                    key="chat"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <ChatPanel memories={memories} />
                   </motion.div>
                 )}
 
