@@ -4,6 +4,8 @@ import { analyzeText, generateSummary, getRelativeTime, tokenizeText } from './n
 import { loadMemories, saveMemories, clearAllMemories } from './memoryStore';
 import { searchMemories } from './searchService';
 import { generateChatResponse } from './chatService';
+import { getCurrentUser, logout } from './authService';
+import AuthScreen from './components/AuthScreen';
 
 // ─── Speech Recognition Hook ────────────────────────────────────────────────
 
@@ -1432,11 +1434,21 @@ const ChatPanel = ({ memories }) => {
 // ─── Main App ────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [memories, setMemories] = useState(() => loadMemories());
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
+  const [memories, setMemories] = useState([]);
   const [searchResults, setSearchResults] = useState(null);
   const [showContent, setShowContent] = useState(false);
   const [activeTab, setActiveTab] = useState('recent');
   const [toast, setToast] = useState(null);
+
+  // Load memories only when user changes
+  useEffect(() => {
+    if (currentUser) {
+      setMemories(loadMemories());
+    } else {
+      setMemories([]);
+    }
+  }, [currentUser]);
 
   const {
     isListening,
@@ -1583,6 +1595,17 @@ export default function App() {
     showToast('📥 Memories exported!');
   };
 
+  const handleLogout = () => {
+    logout();
+    setCurrentUser(null);
+    setMemories([]);
+    showToast('Logged out successfully', 'success');
+  };
+
+  if (!currentUser) {
+    return <AuthScreen onAuthSuccess={setCurrentUser} />;
+  }
+
   const tabs = [
     { id: 'recent', label: 'Recent Memories', icon: '🧠' },
     { id: 'chat', label: 'Ask Memory', icon: '💬' },
@@ -1597,6 +1620,30 @@ export default function App() {
         * { cursor: none !important; }
         body { overflow-x: hidden; }
       `}</style>
+
+      {/* Global Header */}
+      <header className="absolute top-4 left-0 right-0 z-50 px-6 flex justify-between items-center max-w-7xl mx-auto w-full">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-pink-400 to-purple-400 rounded-xl flex items-center justify-center shadow-lg rotate-3 shadow-pink-500/30">
+            <span className="text-xl text-white">🎧</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-500" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+              Semantic Ear
+            </h1>
+            <p className="text-xs text-gray-500" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+              Welcome, {currentUser.name}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={handleLogout}
+          className="px-4 py-2 bg-white/50 backdrop-blur-md border border-white/50 hover:bg-white text-gray-600 hover:text-red-500 rounded-xl text-sm font-semibold shadow-sm transition-all"
+          style={{ fontFamily: "'DM Sans', sans-serif" }}
+        >
+          Log Out
+        </button>
+      </header>
 
       <CustomCursor />
       <VoiceInput
