@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeText, generateSummary, getRelativeTime, tokenizeText } from './nlpService';
 import { loadMemories, saveMemories, clearAllMemories } from './memoryStore';
@@ -208,7 +208,7 @@ function useAudioAnalyser(isListening) {
 
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-        function tick() {
+        const tick = () => {
           if (!mounted) return;
           analyser.getByteFrequencyData(dataArray);
 
@@ -221,7 +221,7 @@ function useAudioAnalyser(isListening) {
           setIsVoiceActive(avg > 8);
 
           animationRef.current = requestAnimationFrame(tick);
-        }
+        };
 
         tick();
       } catch (err) {
@@ -546,7 +546,7 @@ const VoiceInput = ({ isListening, onStop, transcript, interimTranscript, wavefo
                   Stop & Save Memory
                 </button>
 
-                <p className="text-xs text-gray-400 mt-3">Click to save what you've said</p>
+                <p className="text-xs text-gray-400 mt-3">Click to save what you&apos;ve said</p>
               </div>
             </motion.div>
           </motion.div>
@@ -1314,8 +1314,8 @@ const ChatPanel = ({ memories }) => {
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div className={`max-w-[80%] ${msg.role === 'user'
-                  ? 'bg-gradient-to-r from-pink-400 to-purple-400 text-white rounded-2xl rounded-br-md'
-                  : 'bg-white/80 text-gray-700 rounded-2xl rounded-bl-md border border-gray-100'
+                ? 'bg-gradient-to-r from-pink-400 to-purple-400 text-white rounded-2xl rounded-br-md'
+                : 'bg-white/80 text-gray-700 rounded-2xl rounded-bl-md border border-gray-100'
                 } px-5 py-3 shadow-sm`}>
                 {msg.role === 'bot' && (
                   <div className="flex items-center gap-1.5 mb-1.5">
