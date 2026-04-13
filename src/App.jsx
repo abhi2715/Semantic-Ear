@@ -21,23 +21,24 @@ function useSpeechRecognition() {
   const recognitionRef = useRef(null);
   const shouldRestartRef = useRef(false);
 
-  // accumulatedTextRef: persists finalized text ACROSS recognition restarts.
-  // When the browser auto-stops and restarts recognition (continuous mode),
-  // event.results resets. This ref keeps all previously finalized text.
   const accumulatedTextRef = useRef('');
-
-  // sessionFinalsRef: finalized text from the CURRENT recognition session only.
   const sessionFinalsRef = useRef('');
-
-  // interimRef: current interim (in-progress) text
   const interimRef = useRef('');
 
   useEffect(() => {
     if (!SpeechRecognition) {
       setIsSupported(false);
-      return;
     }
+    return () => {
+      shouldRestartRef.current = false;
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) { /* ok */ }
+      }
+    };
+  }, []);
 
+  const createRecognition = useCallback(() => {
+    if (!SpeechRecognition) return null;
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -48,7 +49,6 @@ function useSpeechRecognition() {
       let sessionFinals = '';
       let currentInterim = '';
 
-      // Process ALL results in the current session
       for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
@@ -61,14 +61,9 @@ function useSpeechRecognition() {
       sessionFinalsRef.current = sessionFinals.trim();
       interimRef.current = currentInterim;
 
-      // Full transcript = accumulated from previous sessions + current session finals
       const fullFinal = (accumulatedTextRef.current + ' ' + sessionFinalsRef.current).trim();
       setTranscript(fullFinal);
       setInterimTranscript(currentInterim);
-
-      console.log('[SemanticEar] onresult — accumulated:', accumulatedTextRef.current,
-        '| session finals:', sessionFinalsRef.current,
-        '| interim:', currentInterim);
     };
 
     recognition.onerror = (event) => {
@@ -83,37 +78,31 @@ function useSpeechRecognition() {
     };
 
     recognition.onend = () => {
-      console.log('[SemanticEar] onend — shouldRestart:', shouldRestartRef.current);
       if (shouldRestartRef.current) {
-        // Browser auto-stopped. Accumulate finalized text from this session
-        // before restarting so it's not lost when event.results resets.
         if (sessionFinalsRef.current) {
           accumulatedTextRef.current = (accumulatedTextRef.current + ' ' + sessionFinalsRef.current).trim();
           sessionFinalsRef.current = '';
-          console.log('[SemanticEar] Accumulated before restart:', accumulatedTextRef.current);
         }
         try {
+          // Attempt auto-restart (fails on Safari iOS, but works on Chrome/Edge)
           recognition.start();
         } catch (e) {
-          console.warn('[SemanticEar] Failed to restart:', e);
+          console.warn('[SemanticEar] Safari blocked auto-restart:', e);
+          setIsListening(false);
+          shouldRestartRef.current = false;
         }
       } else {
         setIsListening(false);
       }
     };
 
-    recognitionRef.current = recognition;
-
-    return () => {
-      shouldRestartRef.current = false;
-      try { recognition.stop(); } catch (e) { /* ok */ }
-    };
+    return recognition;
   }, []);
 
   const startListening = useCallback(() => {
-    if (!recognitionRef.current || !isSupported) return;
+    if (!isSupported) return;
 
-    // Reset everything for a fresh recording session
+    // Reset transcripts
     accumulatedTextRef.current = '';
     sessionFinalsRef.current = '';
     interimRef.current = '';
@@ -121,14 +110,26 @@ function useSpeechRecognition() {
     setInterimTranscript('');
     shouldRestartRef.current = true;
 
+    // Always create a fresh instance on start to capture the Safari iOS user gesture token
+    const recognition = createRecognition();
+    if (!recognition) return;
+    
+    // Stop any existing phantom instances
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch(e) {}
+    }
+    
+    recognitionRef.current = recognition;
+
     try {
-      recognitionRef.current.start();
+      recognition.start();
       setIsListening(true);
       console.log('[SemanticEar] Started listening');
     } catch (e) {
-      setIsListening(true);
+      console.error('[SemanticEar] Failed to start:', e);
+      setIsListening(false);
     }
-  }, [isSupported]);
+  }, [isSupported, createRecognition]);
 
   const stopListening = useCallback(() => {
     console.log('[SemanticEar] stopListening called');
@@ -140,14 +141,11 @@ function useSpeechRecognition() {
     setInterimTranscript('');
   }, []);
 
-  // Returns the FULL transcript: accumulated + current session finals + interim
   const getFullTranscript = useCallback(() => {
     const accumulated = accumulatedTextRef.current || '';
     const sessionFinals = sessionFinalsRef.current || '';
     const interim = interimRef.current || '';
-    const full = (accumulated + ' ' + sessionFinals + ' ' + interim).trim();
-    console.log('[SemanticEar] getFullTranscript:', { accumulated, sessionFinals, interim, full });
-    return full;
+    return (accumulated + ' ' + sessionFinals + ' ' + interim).trim();
   }, []);
 
   return {
