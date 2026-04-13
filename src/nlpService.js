@@ -1,4 +1,7 @@
 import nlp from 'compromise';
+import Sentiment from 'sentiment';
+
+const sentimentAnalyzer = new Sentiment();
 
 // Category keywords for classification
 const CATEGORY_KEYWORDS = {
@@ -129,10 +132,26 @@ export function analyzeText(text) {
   const category = detectCategory(text, entities);
   tags.add(category);
 
+  // Sentiment Analysis
+  const sentimentResult = sentimentAnalyzer.analyze(text);
+  const sentimentScore = sentimentResult.score;
+  let sentimentLabel = 'Neutral';
+  if (sentimentScore > 0) sentimentLabel = 'Positive';
+  if (sentimentScore < 0) sentimentLabel = 'Negative';
+
+  // Task Detection
+  let isTask = category === 'reminder';
+  const lowerText = text.toLowerCase().trim();
+  if (lowerText.startsWith('remind me') || lowerText.startsWith('i need to') || lowerText.startsWith('buy ') || lowerText.includes('add to my todo')) {
+    isTask = true;
+  }
+
   return {
     tags: Array.from(tags).slice(0, 8),
     category,
-    entities
+    entities,
+    sentiment: { score: sentimentScore, label: sentimentLabel },
+    isTask
   };
 }
 

@@ -8,6 +8,11 @@ const getStorageKey = () => {
     return user ? `semantic_ear_memories_${user.id}` : 'semantic_ear_memories_guest';
 };
 
+const getTaskStorageKey = () => {
+    const user = getCurrentUser();
+    return user ? `semantic_ear_tasks_${user.id}` : 'semantic_ear_tasks_guest';
+};
+
 /**
  * Load all memories from localStorage for the active user
  * @returns {Array} Array of memory objects
@@ -44,5 +49,33 @@ export function clearAllMemories() {
         localStorage.removeItem(getStorageKey());
     } catch (err) {
         console.warn('Failed to clear memories from localStorage:', err);
+    }
+}
+
+/**
+ * Load all tasks from localStorage for the active user
+ * @returns {Array} Array of task objects
+ */
+export function loadTasks() {
+    try {
+        const raw = localStorage.getItem(getTaskStorageKey());
+        if (!raw) return [];
+        const tasks = JSON.parse(raw);
+        return Array.isArray(tasks) ? tasks : [];
+    } catch (err) {
+        console.warn('Failed to load tasks from localStorage:', err);
+        return [];
+    }
+}
+
+/**
+ * Save all tasks to localStorage for the active user
+ * @param {Array} tasks - Array of task objects
+ */
+export function saveTasks(tasks) {
+    try {
+        localStorage.setItem(getTaskStorageKey(), JSON.stringify(tasks));
+    } catch (err) {
+        console.warn('Failed to save tasks to localStorage:', err);
     }
 }
