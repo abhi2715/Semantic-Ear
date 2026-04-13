@@ -71,8 +71,8 @@ export function generateChatResponse(message, memories) {
         const memCount = memories.length;
         return {
             text: memCount > 0
-                ? `Hey there! 👋 I'm your memory assistant. You have **${memCount}** memories stored. Ask me anything about them — like "What did I eat recently?" or "Summarize my week".`
-                : `Hey! 👋 I'm your memory assistant. You don't have any memories saved yet. Start recording to build your memory bank, then ask me anything!`,
+                ? `Hey Abhi! 👋 How's it going? I'm your memory sidekick always here to help. You've got **${memCount}** memories stored with me. Ask me anything you want to remember — like "Who do I like going to college with?" or "Summarize my week". Let's chat!`
+                : `Oh hey Abhi! 👋 I'm your new memory assistant. Looks like we haven't made any memories together yet. Tap that mic to start recording, and then we can chat about whatever you tell me!`,
             relatedMemories: []
         };
     }
@@ -93,7 +93,7 @@ export function generateChatResponse(message, memories) {
 
     if (memories.length === 0) {
         return {
-            text: `You don't have any memories yet! 🎙️ Click the microphone to start recording, and I'll be able to answer your questions once you've saved some memories.`,
+            text: `Hold on Abhi, we don't have any memories saved yet! 🎙️ Click the microphone above to tell me what's on your mind. Once you record something, I'll be able to totally answer your questions.`,
             relatedMemories: []
         };
     }
@@ -189,7 +189,7 @@ export function generateChatResponse(message, memories) {
         });
         if (people.size > 0) {
             return {
-                text: `👤 Based on your memories, the people involved are: **${[...people].join(', ')}**`,
+                text: `Ohh hey Abhi! Let me check... yep, according to what you told me earlier, the people involved here are: **${[...people].join(', ')}**. Here's the related memory blocks in your data I found:`,
                 relatedMemories: topResults.map(r => r.memory)
             };
         }
@@ -212,15 +212,28 @@ export function generateChatResponse(message, memories) {
     // --- Default: search-based response ---
     if (topResults.length > 0) {
         const best = topResults[0].memory;
-        const intro = topResults.length === 1
-            ? `I found **1 memory** related to that:`
-            : `I found **${topResults.length}** memories. Here's the most relevant:`;
+        
+        const peopleList = best.entities?.people || [];
+        const topicList = best.entities?.topics || [];
+        
+        // Conversational human-like intro
+        let intro = "Ohh hey Abhi! Let me dig into your memories... Ah, got it! ";
+        
+        if (peopleList.length > 0 && topicList.length > 0) {
+            intro += `It looks like you were talking about ${topicList[0]} with ${peopleList[0]}. `;
+        } else if (peopleList.length > 0) {
+            intro += `It seems you were hanging out with or talking about ${peopleList.join(' and ')}. `;
+        } else if (topicList.length > 0) {
+            intro += `Looks like this is mainly about ${topicList[0]}. `;
+        }
+        
+        intro += "Here's the memory block related to your data that I found:";
 
-        let response = `${intro}\n\n> "${best.text.slice(0, 150)}${best.text.length > 150 ? '...' : ''}"` +
-            `\n\n🏷️ Category: **${best.category}** | Tags: ${(best.tags || []).slice(0, 4).map(t => `\`${t}\``).join(', ')} | ${timeAgo(best.timestamp)}`;
+        let response = `${intro}\n\n> "${best.text}"` +
+            `\n\n_(Recorded in your **${best.category}** notes ${timeAgo(best.timestamp)} ago)_`;
 
         if (topResults.length > 1) {
-            response += `\n\n_${topResults.length - 1} more related memories found._`;
+            response += `\n\nBy the way, I also found ${topResults.length - 1} other related memories! Check them out below.`;
         }
 
         return {
@@ -231,7 +244,7 @@ export function generateChatResponse(message, memories) {
 
     // No results
     return {
-        text: `🤔 I couldn't find any memories related to "${message}". Try asking about something you've recorded, or use different keywords!`,
+        text: `🤔 Hmm, sorry Abhi, I couldn't find any memories related to "${message}". Maybe try asking about it in a different way or double-check you recorded it?`,
         relatedMemories: []
     };
 }
