@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeText, generateSummary, getRelativeTime, tokenizeText } from './nlpService';
-import { loadMemories, saveMemories, clearAllMemories } from './memoryStore';
+import { loadMemories, saveMemories, clearAllMemories, loadTasks, saveTasks } from './memoryStore';
 import { searchMemories } from './searchService';
 import { generateChatResponse } from './chatService';
 import { getCurrentUser, logout } from './authService';
 import AuthScreen from './components/AuthScreen';
+import html2canvas from 'html2canvas';
+import GraphTab from './GraphTab';
 
 // ─── Speech Recognition Hook ────────────────────────────────────────────────
 
@@ -159,6 +161,20 @@ function useSpeechRecognition() {
     getFullTranscript
   };
 }
+
+const POS_COLORS = {
+  noun: { bg: 'bg-blue-100/90', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500', glow: 'shadow-[0_0_12px_rgba(59,130,246,0.4)]' },
+  verb: { bg: 'bg-emerald-100/90', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500', glow: 'shadow-[0_0_12px_rgba(16,185,129,0.4)]' },
+  person: { bg: 'bg-pink-100/90', text: 'text-pink-700', border: 'border-pink-200', dot: 'bg-pink-500', glow: 'shadow-[0_0_12px_rgba(236,72,153,0.4)]' },
+  place: { bg: 'bg-orange-100/90', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-500', glow: 'shadow-[0_0_12px_rgba(249,115,22,0.4)]' },
+  adj: { bg: 'bg-violet-100/90', text: 'text-violet-700', border: 'border-violet-200', dot: 'bg-violet-500', glow: 'shadow-[0_0_12px_rgba(139,92,246,0.4)]' },
+  adv: { bg: 'bg-amber-100/90', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500', glow: 'shadow-[0_0_12px_rgba(245,158,11,0.4)]' },
+  det: { bg: 'bg-gray-100/90', text: 'text-gray-600', border: 'border-gray-200', dot: 'bg-gray-400', glow: 'shadow-[0_0_8px_rgba(156,163,175,0.3)]' },
+  pron: { bg: 'bg-gray-100/90', text: 'text-gray-600', border: 'border-gray-200', dot: 'bg-gray-400', glow: 'shadow-[0_0_8px_rgba(156,163,175,0.3)]' },
+  prep: { bg: 'bg-gray-100/90', text: 'text-gray-600', border: 'border-gray-200', dot: 'bg-gray-400', glow: 'shadow-[0_0_8px_rgba(156,163,175,0.3)]' },
+  conj: { bg: 'bg-gray-100/90', text: 'text-gray-600', border: 'border-gray-200', dot: 'bg-gray-400', glow: 'shadow-[0_0_8px_rgba(156,163,175,0.3)]' },
+  word: { bg: 'bg-gray-50/90', text: 'text-gray-600', border: 'border-gray-200', dot: 'bg-gray-400', glow: 'shadow-[0_0_8px_rgba(156,163,175,0.2)]' },
+};
 
 // ─── Audio Visualizer Hook (real microphone waveform) ────────────────────────
 
@@ -346,20 +362,88 @@ const FloatingBlobs = () => {
   );
 };
 
+const NLPBackgroundDecorations = () => {
+  const words = [
+    { text: '[NOUN]', color: 'text-blue-500' },
+    { text: '{ENTITY}', color: 'text-emerald-500' },
+    { text: '"Tokens"', color: 'text-purple-500' },
+    { text: '[VERB]', color: 'text-pink-500' },
+    { text: 'parse()', color: 'text-indigo-500' },
+    { text: 'lemma', color: 'text-orange-500' },
+    { text: 'Graph', color: 'text-cyan-500' },
+    { text: 'Context', color: 'text-rose-500' },
+    { text: '<POS>', color: 'text-violet-500' },
+    { text: 'Syntax', color: 'text-fuchsia-500' },
+    { text: 'Semantics', color: 'text-sky-500' },
+    { text: '[ADJ]', color: 'text-teal-500' },
+    { text: 'Tree', color: 'text-amber-500' },
+    { text: 'Node', color: 'text-lime-500' },
+    { text: 'Vector', color: 'text-red-500' }
+  ];
+
+  // Create 25 particles
+  const particles = Array.from({ length: 25 }).map((_, i) => {
+    const word = words[i % words.length];
+    return {
+      id: i,
+      text: word.text,
+      color: word.color,
+      left: `${(i * 13) % 90 + 5}%`, // Spread across x-axis
+      delay: (i * 1.5) % 12,       // Staggered start timing
+      duration: 12 + (i % 15),     // Different float speeds
+      scale: 0.6 + ((i % 5) * 0.1) // Random scale sizes
+    };
+  });
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+      {/* Floating Particles */}
+      {particles.map((p) => (
+        <motion.div
+          key={p.id}
+          className="absolute"
+          style={{ 
+            left: p.left, 
+            bottom: '-10%', // Start slightly offscreen below
+            fontFamily: "'DM Sans', sans-serif" 
+          }}
+          initial={{ y: 0, opacity: 0, scale: p.scale, rotate: 0 }}
+          animate={{ 
+            y: ['0vh', '-120vh'], // Float up significantly
+            opacity: [0, 0.9, 0], // Spawn, become solid, fade out (die)
+            rotate: [0, (p.id % 2 === 0 ? 1 : -1) * (15 + p.id * 2)]
+          }}
+          transition={{ 
+            duration: p.duration, 
+            repeat: Infinity, 
+            delay: p.delay, 
+            ease: "linear" 
+          }}
+        >
+          <div className={`px-4 py-2 rounded-xl bg-white/70 border border-white/50 shadow-xl backdrop-blur-md ${p.color} font-black tracking-widest text-xs lg:text-sm uppercase flex items-center justify-center`}>
+            {p.text}
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+};
+
 const Hero = ({ onStartListening, isSupported }) => {
   return (
     <div className="relative min-h-screen flex items-center justify-center overflow-hidden">
       <FloatingBlobs />
+      <NLPBackgroundDecorations />
 
-      <div className="relative z-10 text-center px-4 max-w-5xl mx-auto">
+      <div className="relative z-10 text-center px-4 max-w-5xl mx-auto w-full">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
         >
           <motion.h1
-            className="text-8xl md:text-9xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-pink-400 via-purple-400 to-blue-400"
-            style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", lineHeight: '1.1' }}
+            className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-pink-400 via-purple-400 to-blue-400 leading-tight md:leading-none whitespace-normal break-words"
+            style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
             animate={{ backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'] }}
             transition={{ duration: 5, repeat: Infinity, ease: "linear" }}
           >
@@ -367,7 +451,7 @@ const Hero = ({ onStartListening, isSupported }) => {
           </motion.h1>
 
           <motion.p
-            className="text-2xl md:text-3xl text-gray-600 mb-12 font-light"
+            className="text-xl sm:text-2xl md:text-3xl text-gray-600 mb-12 font-light px-2"
             style={{ fontFamily: "'DM Sans', sans-serif" }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -421,7 +505,7 @@ const Hero = ({ onStartListening, isSupported }) => {
   );
 };
 
-const VoiceInput = ({ isListening, onStop, transcript, interimTranscript, waveformData, isVoiceActive }) => {
+const VoiceInput = ({ isListening, onStop, onCancel, transcript, interimTranscript, waveformData, isVoiceActive }) => {
   const [duration, setDuration] = useState(0);
 
   useEffect(() => {
@@ -460,7 +544,7 @@ const VoiceInput = ({ isListening, onStop, transcript, interimTranscript, wavefo
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={onStop}
+            onClick={onCancel || onStop}
           />
 
           <motion.div
@@ -520,8 +604,8 @@ const VoiceInput = ({ isListening, onStop, transcript, interimTranscript, wavefo
                   ))}
                 </div>
 
-                {/* Live transcript */}
-                <div className="w-full bg-gray-50/80 rounded-2xl p-4 mb-5 min-h-[80px] max-h-[160px] overflow-y-auto border border-gray-100">
+                {/* Live transcript (Simple Text) */}
+                <div className="w-full bg-gray-50/80 rounded-2xl p-4 mb-3 min-h-[60px] max-h-[120px] overflow-y-auto border border-gray-100">
                   {fullTranscript ? (
                     <p className="text-sm text-gray-700 leading-relaxed" style={{ fontFamily: "'DM Sans', sans-serif" }}>
                       {transcript}
@@ -535,20 +619,68 @@ const VoiceInput = ({ isListening, onStop, transcript, interimTranscript, wavefo
                       />
                     </p>
                   ) : (
-                    <p className="text-sm text-gray-400 italic text-center" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+                    <p className="text-sm text-gray-400 italic text-center w-full mt-2" style={{ fontFamily: "'DM Sans', sans-serif" }}>
                       Start speaking — your words will appear here...
                     </p>
                   )}
                 </div>
 
-                <button
-                  onClick={onStop}
-                  className="w-full px-6 py-3 bg-gradient-to-r from-pink-400 to-purple-400 text-white rounded-2xl font-semibold hover:shadow-lg transition-all hover:scale-105 active:scale-95"
-                >
-                  Stop & Save Memory
-                </button>
+                {/* Live NLP Processing */}
+                {fullTranscript && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="w-full mb-5"
+                  >
+                    <p className="text-[10px] text-purple-500 font-bold uppercase tracking-wider mb-2 ml-2 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+                      Real-time NLP Pipeline
+                    </p>
+                    <div className="w-full bg-purple-50/30 rounded-2xl p-4 min-h-[60px] max-h-[120px] overflow-y-auto border border-purple-100/50 flex flex-wrap gap-x-3 gap-y-4 items-center content-start">
+                      {tokenizeText(fullTranscript).map((token, i) => {
+                        const colors = POS_COLORS[token.pos] || POS_COLORS.word;
+                        return (
+                          <motion.div
+                            key={`${token.text}-${i}`}
+                            initial={{ opacity: 0, scale: 0.5, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                            className={`relative flex items-center justify-center px-3 py-1.5 min-w-[36px] rounded-full border border-white/60 shadow-lg ${colors.glow} ${colors.bg} cursor-default overflow-visible backdrop-blur-sm`}
+                          >
+                            <span className={`text-[12px] font-extrabold tracking-wide ${colors.text}`}>
+                              {token.text}
+                            </span>
+                            <motion.span 
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              transition={{ delay: 0.1, type: 'spring', stiffness: 400 }}
+                              className={`absolute -top-2 -right-2 text-[7px] px-1.5 py-0.5 rounded-full ${colors.dot} text-white font-bold tracking-wider uppercase leading-none shadow-sm ring-1 ring-white/50`}
+                            >
+                              {token.tag}
+                            </motion.span>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
 
-                <p className="text-xs text-gray-400 mt-3">Click to save what you&apos;ve said</p>
+                <div className="w-full flex gap-3">
+                  <button
+                    onClick={onCancel}
+                    className="flex-1 px-4 py-3 bg-red-50 text-red-500 border border-red-100 rounded-2xl font-semibold hover:bg-red-100 transition-all hover:scale-105 active:scale-95 text-sm"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    onClick={onStop}
+                    className="flex-[2] px-6 py-3 bg-gradient-to-r from-pink-400 to-purple-400 text-white rounded-2xl font-semibold hover:shadow-lg transition-all hover:scale-105 active:scale-95"
+                  >
+                    Stop & Save
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-400 mt-3 text-center">Save or discard your new memory</p>
               </div>
             </motion.div>
           </motion.div>
@@ -615,6 +747,50 @@ const MemoryCard = ({ memory, index, onDelete }) => {
     return icons[category] || '💭';
   };
 
+  const getSentimentStyle = (sentiment) => {
+    if (!sentiment) return { bg: 'bg-white/60', tagBg: 'bg-gray-100', text: 'text-gray-700' };
+    if (sentiment.label === 'Positive') return { bg: 'bg-emerald-50/80 border-emerald-200/50', tagBg: 'bg-emerald-100/80', text: 'text-emerald-700' };
+    if (sentiment.label === 'Negative') return { bg: 'bg-rose-50/80 border-rose-200/50', tagBg: 'bg-rose-100/80', text: 'text-rose-700' };
+    return { bg: 'bg-slate-50/80 border-slate-200/50', tagBg: 'bg-slate-100/80', text: 'text-slate-700' };
+  };
+
+  const handleShare = async (e) => {
+    e.stopPropagation();
+    const element = document.getElementById(`memory-${memory.id}`);
+    if (element) {
+      try {
+        const canvas = await html2canvas(element, { backgroundColor: null, scale: 2 });
+        canvas.toBlob(async (blob) => {
+          if (!blob) return;
+          const file = new File([blob], `Memory_${memory.timestamp}.png`, { type: 'image/png' });
+          const shareData = {
+            title: 'My Semantic Ear Memory',
+            text: 'Check out this memory card!',
+            files: [file]
+          };
+          if (navigator.canShare && navigator.canShare(shareData)) {
+            try {
+              await navigator.share(shareData);
+            } catch (err) {
+              console.warn('Share dialog cancelled or failed', err);
+            }
+          } else {
+             // Fallback for browsers that do not support Web Share API for files
+             const dataUrl = canvas.toDataURL('image/png');
+             const link = document.createElement('a');
+             link.download = file.name;
+             link.href = dataUrl;
+             link.click();
+          }
+        }, 'image/png');
+      } catch (err) {
+        console.error('Failed to share memory', err);
+      }
+    }
+  };
+
+  const sentStyle = getSentimentStyle(memory.sentiment);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 50 }}
@@ -624,12 +800,24 @@ const MemoryCard = ({ memory, index, onDelete }) => {
       whileHover={{ scale: 1.03, y: -5 }}
       className="group"
     >
-      <div className="relative bg-white/60 backdrop-blur-xl rounded-3xl p-6 shadow-lg border border-white/50 hover:shadow-2xl transition-all duration-300">
-        <div className={`absolute inset-0 bg-gradient-to-br ${getCategoryColor(memory.category)} opacity-0 group-hover:opacity-20 rounded-3xl transition-opacity duration-300`} />
+      <div id={`memory-${memory.id}`} className={`relative ${sentStyle.bg} backdrop-blur-xl rounded-3xl p-6 shadow-lg border hover:shadow-2xl transition-all duration-300`}>
+        <div className={`absolute inset-0 bg-gradient-to-br ${getCategoryColor(memory.category)} opacity-0 group-hover:opacity-10 rounded-3xl transition-opacity duration-300 pointer-events-none`} />
 
+        {/* Share Button */}
+        <button
+          onClick={handleShare}
+          className="absolute top-4 right-14 w-8 h-8 rounded-full bg-blue-50 hover:bg-blue-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10"
+          title="Share Memory"
+        >
+          <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+        </button>
+
+        {/* Delete Button */}
         <button
           onClick={() => onDelete(memory.id)}
-          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10"
+          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all z-10 bg-opacity-80"
           title="Delete memory"
         >
           <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -643,6 +831,11 @@ const MemoryCard = ({ memory, index, onDelete }) => {
             <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100/80 text-purple-700 capitalize">
               {memory.category}
             </span>
+            {memory.sentiment && (
+              <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${sentStyle.tagBg} ${sentStyle.text}`}>
+                 {memory.sentiment.score > 0 ? '😊' : memory.sentiment.score < 0 ? '😟' : '😐'} {memory.sentiment.label}
+              </span>
+            )}
             <span className="text-xs text-gray-400 ml-auto">{getRelativeTime(memory.timestamp)}</span>
           </div>
 
@@ -652,7 +845,7 @@ const MemoryCard = ({ memory, index, onDelete }) => {
             </p>
           )}
 
-          <p className="text-gray-700 leading-relaxed mb-3" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+          <p className="text-gray-700 leading-relaxed mb-3 font-medium" style={{ fontFamily: "'DM Sans', sans-serif" }}>
             {memory.text}
           </p>
 
@@ -1080,6 +1273,93 @@ const InsightsPanel = ({ memories }) => {
             ))}
           </div>
 
+          {/* Under the Hood — NLP Pipeline Preview */}
+          {memories.length > 0 && (() => {
+            const latest = memories[0];
+            const tokens = tokenizeText(latest.text);
+            if (tokens.length === 0) return null;
+
+            const posColors = POS_COLORS;
+
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                className="bg-white/60 backdrop-blur-xl rounded-3xl p-8 shadow-lg border border-white/50"
+              >
+                <h3 className="text-lg font-bold text-gray-700 mb-2 flex items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                  🧪 Under the Hood
+                </h3>
+                <p className="text-xs text-gray-400 mb-4">How our NLP engine tokenizes your latest memory</p>
+
+                <div className="flex flex-wrap gap-2 mb-5">
+                  {tokens.map((token, i) => {
+                    const colors = posColors[token.pos] || posColors.word;
+                    const changed = token.text.toLowerCase() !== token.root;
+                    return (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, scale: 0.8, y: 5 }}
+                        whileInView={{ opacity: 1, scale: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: i * 0.04, type: 'spring', stiffness: 400 }}
+                        whileHover={{ scale: 1.1, y: -2 }}
+                        className={`relative flex flex-col items-center justify-center px-4 py-2 min-w-[50px] rounded-full border border-white/60 shadow-lg ${colors.glow} ${colors.bg} cursor-default overflow-visible backdrop-blur-sm`}
+                      >
+                        <span className={`text-[13px] font-extrabold tracking-wide ${colors.text}`}>
+                          {token.text}
+                        </span>
+                        {changed && (
+                          <span className="text-[10px] text-gray-500 font-medium -mt-0.5" style={{ opacity: 0.8 }}>→ {token.root}</span>
+                        )}
+                        <span className={`absolute -top-2 -right-2 text-[8px] px-2 py-0.5 rounded-full ${colors.dot} text-white font-bold tracking-wider uppercase leading-none shadow-sm ring-1 ring-white/50`}>
+                          {token.tag}
+                        </span>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+
+                {/* Legend */}
+                <div className="flex flex-wrap gap-3 mt-2 pt-3 border-t border-gray-100">
+                  {[
+                    { label: 'Noun', color: 'bg-blue-400' },
+                    { label: 'Verb', color: 'bg-emerald-400' },
+                    { label: 'Person', color: 'bg-pink-400' },
+                    { label: 'Place', color: 'bg-orange-400' },
+                    { label: 'Adj', color: 'bg-violet-400' },
+                    { label: 'Other', color: 'bg-gray-300' },
+                  ].map(item => (
+                    <span key={item.label} className="flex items-center gap-1 text-[10px] text-gray-500">
+                      <span className={`w-2 h-2 rounded-full ${item.color}`} />
+                      {item.label}
+                    </span>
+                  ))}
+                </div>
+              </motion.div>
+            );
+          })()}
+
+          {/* Entity Breakdown */}
+          {(topPeople.length > 0 || topPlaces.length > 0 || topVerbs.length > 0) && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="bg-white/60 backdrop-blur-xl rounded-3xl p-8 shadow-lg border border-white/50"
+            >
+              <h3 className="text-lg font-bold text-gray-700 mb-5 flex items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                🔬 Entity Breakdown
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {entitySection('People Mentioned', '👤', topPeople)}
+                {entitySection('Places', '📍', topPlaces)}
+                {entitySection('Key Actions', '⚡', topVerbs)}
+              </div>
+            </motion.div>
+          )}
+
           {/* Tag Cloud */}
           {topTags.length > 0 && (
             <motion.div
@@ -1114,105 +1394,6 @@ const InsightsPanel = ({ memories }) => {
               </div>
             </motion.div>
           )}
-
-          {/* Entity Breakdown */}
-          {(topPeople.length > 0 || topPlaces.length > 0 || topVerbs.length > 0) && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              className="bg-white/60 backdrop-blur-xl rounded-3xl p-8 shadow-lg border border-white/50"
-            >
-              <h3 className="text-lg font-bold text-gray-700 mb-5 flex items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                🔬 Entity Breakdown
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {entitySection('People Mentioned', '👤', topPeople)}
-                {entitySection('Places', '📍', topPlaces)}
-                {entitySection('Key Actions', '⚡', topVerbs)}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Under the Hood — NLP Pipeline Preview */}
-          {memories.length > 0 && (() => {
-            const latest = memories[0];
-            const tokens = tokenizeText(latest.text);
-            if (tokens.length === 0) return null;
-
-            const posColors = {
-              noun: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-400' },
-              verb: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-400' },
-              person: { bg: 'bg-pink-100', text: 'text-pink-700', border: 'border-pink-200', dot: 'bg-pink-400' },
-              place: { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200', dot: 'bg-orange-400' },
-              adj: { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-200', dot: 'bg-violet-400' },
-              adv: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-400' },
-              det: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200', dot: 'bg-gray-300' },
-              pron: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200', dot: 'bg-gray-300' },
-              prep: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200', dot: 'bg-gray-300' },
-              conj: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200', dot: 'bg-gray-300' },
-              word: { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200', dot: 'bg-gray-300' },
-            };
-
-            return (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                className="bg-white/60 backdrop-blur-xl rounded-3xl p-8 shadow-lg border border-white/50"
-              >
-                <h3 className="text-lg font-bold text-gray-700 mb-2 flex items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                  🧪 Under the Hood
-                </h3>
-                <p className="text-xs text-gray-400 mb-4">How our NLP engine tokenizes your latest memory</p>
-
-                <div className="flex flex-wrap gap-2 mb-5">
-                  {tokens.map((token, i) => {
-                    const colors = posColors[token.pos] || posColors.word;
-                    const changed = token.text.toLowerCase() !== token.root;
-                    return (
-                      <motion.div
-                        key={i}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        whileInView={{ opacity: 1, scale: 1 }}
-                        viewport={{ once: true }}
-                        transition={{ delay: i * 0.04 }}
-                        whileHover={{ scale: 1.1, y: -2 }}
-                        className={`relative flex flex-col items-center px-3 py-1.5 rounded-xl border ${colors.bg} ${colors.border} cursor-default`}
-                      >
-                        <span className={`text-sm font-semibold ${colors.text}`}>
-                          {token.text}
-                        </span>
-                        {changed && (
-                          <span className="text-[10px] text-gray-400 -mt-0.5">→ {token.root}</span>
-                        )}
-                        <span className={`absolute -top-1.5 -right-1.5 text-[8px] px-1.5 py-0.5 rounded-full ${colors.dot} text-white font-bold uppercase leading-none`}>
-                          {token.tag}
-                        </span>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-
-                {/* Legend */}
-                <div className="flex flex-wrap gap-3 mt-2 pt-3 border-t border-gray-100">
-                  {[
-                    { label: 'Noun', color: 'bg-blue-400' },
-                    { label: 'Verb', color: 'bg-emerald-400' },
-                    { label: 'Person', color: 'bg-pink-400' },
-                    { label: 'Place', color: 'bg-orange-400' },
-                    { label: 'Adj', color: 'bg-violet-400' },
-                    { label: 'Other', color: 'bg-gray-300' },
-                  ].map(item => (
-                    <span key={item.label} className="flex items-center gap-1 text-[10px] text-gray-500">
-                      <span className={`w-2 h-2 rounded-full ${item.color}`} />
-                      {item.label}
-                    </span>
-                  ))}
-                </div>
-              </motion.div>
-            );
-          })()}
         </div>
       )}
     </div>
@@ -1225,7 +1406,7 @@ const ChatPanel = ({ memories }) => {
     {
       id: 1,
       role: 'bot',
-      text: "Hey! 👋 I'm your memory assistant. Ask me anything about your memories — like \"What did I eat recently?\" or \"Summarize my week\".",
+      text: "Hey Abhi! 👋 How's it going? I'm your memory sidekick always here to help. Ask me anything you want to remember — like \"Who do I like going to college with?\" or \"Summarize my week\". Let's chat!",
       relatedMemories: []
     }
   ]);
@@ -1436,17 +1617,20 @@ const ChatPanel = ({ memories }) => {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
   const [memories, setMemories] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [searchResults, setSearchResults] = useState(null);
   const [showContent, setShowContent] = useState(false);
   const [activeTab, setActiveTab] = useState('recent');
   const [toast, setToast] = useState(null);
 
-  // Load memories only when user changes
+  // Load memories and tasks only when user changes
   useEffect(() => {
     if (currentUser) {
       setMemories(loadMemories());
+      setTasks(loadTasks());
     } else {
       setMemories([]);
+      setTasks([]);
     }
   }, [currentUser]);
 
@@ -1469,10 +1653,14 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // Persist memories whenever they change
+  // Persist memories and tasks whenever they change
   useEffect(() => {
     saveMemories(memories);
   }, [memories]);
+
+  useEffect(() => {
+    saveTasks(tasks);
+  }, [tasks]);
 
   // Show content section if there are saved memories
   useEffect(() => {
@@ -1497,6 +1685,13 @@ export default function App() {
     }
   };
 
+  const handleCancelListening = () => {
+    console.log('[SemanticEar] handleCancelListening — discarding transcript');
+    stopListening();
+    setTranscript('');
+    showToast('❌ Recording discarded');
+  };
+
   const handleStopListening = () => {
     // Read the full transcript BEFORE stopping (refs are synchronous)
     const finalText = getFullTranscript();
@@ -1508,22 +1703,30 @@ export default function App() {
     if (finalText && finalText.length > 0) {
       try {
         // Run NLP analysis on the spoken text
-        const { tags, category, entities } = analyzeText(finalText);
+        const analysis = analyzeText(finalText);
+        const { tags, category, entities, sentiment, isTask } = analysis;
         const summary = generateSummary(finalText, category, entities);
 
-        const newMemory = {
+        const newItem = {
           id: Date.now(),
           text: finalText,
           summary,
           tags,
           category,
           entities,
+          sentiment: sentiment || null,
           timestamp: Date.now()
         };
 
-        console.log('[SemanticEar] Saving memory:', newMemory);
-        setMemories(prev => [newMemory, ...prev]);
-        showToast(`✨ Memory saved — "${category}" with ${tags.length} tags`);
+        if (isTask) {
+          console.log('[SemanticEar] Saving task:', newItem);
+          setTasks(prev => [newItem, ...prev]);
+          showToast(`✅ Actionable Task added!`);
+        } else {
+          console.log('[SemanticEar] Saving memory:', newItem);
+          setMemories(prev => [newItem, ...prev]);
+          showToast(`✨ Memory saved — "${category}" with ${tags.length} tags`);
+        }
       } catch (err) {
         console.error('[SemanticEar] NLP error, saving raw memory:', err);
         // Fallback: save memory even if NLP fails
@@ -1534,6 +1737,7 @@ export default function App() {
           tags: ['unprocessed'],
           category: 'general',
           entities: {},
+          sentiment: { score: 0, label: 'Neutral' },
           timestamp: Date.now()
         };
         setMemories(prev => [newMemory, ...prev]);
@@ -1610,7 +1814,8 @@ export default function App() {
     { id: 'recent', label: 'Recent Memories', icon: '🧠' },
     { id: 'chat', label: 'Ask Memory', icon: '💬' },
     { id: 'insights', label: 'Smart Insights', icon: '⚡' },
-    { id: 'timeline', label: 'Memory Timeline', icon: '📅' }
+    { id: 'timeline', label: 'Memory Timeline', icon: '📅' },
+    { id: 'web', label: 'Memory Web 3D', icon: '🕸️' }
   ];
 
   return (
@@ -1622,7 +1827,7 @@ export default function App() {
       `}</style>
 
       {/* Global Header */}
-      <header className="absolute top-4 left-0 right-0 z-50 px-6 flex justify-between items-center max-w-7xl mx-auto w-full">
+      <header className="absolute top-4 left-0 right-0 z-50 px-4 sm:px-6 flex flex-wrap justify-between items-center max-w-7xl mx-auto w-full gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gradient-to-br from-pink-400 to-purple-400 rounded-xl flex items-center justify-center shadow-lg rotate-3 shadow-pink-500/30">
             <span className="text-xl text-white">🎧</span>
@@ -1649,6 +1854,7 @@ export default function App() {
       <VoiceInput
         isListening={isListening}
         onStop={handleStopListening}
+        onCancel={handleCancelListening}
         transcript={transcript}
         interimTranscript={interimTranscript}
         waveformData={waveformData}
@@ -1711,20 +1917,20 @@ export default function App() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex justify-center mb-12"
+                className="flex justify-start sm:justify-center mb-12 overflow-x-auto pb-4 px-2 w-full snap-x"
               >
-                <div className="inline-flex bg-white/60 backdrop-blur-xl rounded-3xl p-2 shadow-lg border border-white/50">
+                <div className="inline-flex bg-white/60 backdrop-blur-xl rounded-3xl p-2 shadow-lg border border-white/50 w-max mx-auto snap-center">
                   {tabs.map(tab => (
                     <button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
-                      className={`px-6 py-3 rounded-2xl font-medium transition-all ${activeTab === tab.id
+                      className={`px-4 py-2 sm:px-6 sm:py-3 rounded-2xl font-medium transition-all whitespace-nowrap text-sm sm:text-base ${activeTab === tab.id
                         ? 'bg-gradient-to-r from-pink-400 to-purple-400 text-white shadow-lg'
-                        : 'text-gray-600 hover:text-gray-800'
+                        : 'text-gray-600 hover:text-gray-800 hover:bg-white/40'
                         }`}
                       style={{ fontFamily: "'DM Sans', sans-serif" }}
                     >
-                      <span className="mr-2">{tab.icon}</span>
+                      <span className="mr-1.5 sm:mr-2">{tab.icon}</span>
                       {tab.label}
                     </button>
                   ))}
@@ -1741,6 +1947,29 @@ export default function App() {
                     exit={{ opacity: 0, y: -20 }}
                     transition={{ duration: 0.3 }}
                   >
+                    {/* Smart To-Do Errands Panel */}
+                    {tasks.length > 0 && (
+                      <div className="mb-16 max-w-4xl mx-auto">
+                        <div className="bg-white/70 backdrop-blur-xl border border-white/50 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+                          <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-emerald-400 to-cyan-400" />
+                          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                            <span>📋</span> Smart Errands & Tasks
+                          </h3>
+                          <ul className="space-y-3">
+                            {tasks.map(task => (
+                              <li key={task.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 bg-white/50 rounded-xl hover:bg-white/80 transition-all cursor-pointer group shadow-sm border border-transparent hover:border-gray-200">
+                                <button onClick={() => setTasks(tasks.filter(t => t.id !== task.id))} className="w-6 h-6 shrink-0 rounded-full border-2 border-gray-300 flex items-center justify-center group-hover:border-emerald-500 transition-colors">
+                                  <svg className="w-4 h-4 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                </button>
+                                <span className="text-gray-700 font-medium text-sm flex-1">{task.text}</span>
+                                <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md">{getRelativeTime(task.timestamp)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+
                     <motion.h2
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -1772,6 +2001,18 @@ export default function App() {
                         ))}
                       </div>
                     )}
+                  </motion.div>
+                )}
+
+                {activeTab === 'web' && (
+                  <motion.div
+                    key="web"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <GraphTab memories={memories} />
                   </motion.div>
                 )}
 
